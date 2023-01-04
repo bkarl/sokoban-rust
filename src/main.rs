@@ -17,9 +17,9 @@ use platform::PlatformSpecific;
 fn main() -> Result<(), io::Error> {
     let mut game = Game::new();
     let mut platform = PlatformSpecific::new_terminal_platform();
-    game.init()?;
+    game.init(&platform)?;
 
     game.main_loop(&mut platform);
-    game.tear_down();
+    game.tear_down(&platform);
     Ok(())
 }

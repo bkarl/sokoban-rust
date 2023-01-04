@@ -1,5 +1,4 @@
-use std::io::{self, stdout};
-use termion::raw::IntoRawMode;
+use std::io;
 
 use crate::input::{GameCommand, UserInputProvider};
 use crate::{Map, MapTile, MapManager,MoveDirection, DefaultMapContentProvider, Position};
@@ -16,8 +15,9 @@ impl Game {
         Game {map_manager: MapManager { maps: Vec::new() }, current_map_id: 0 }    
     }
     
-    pub fn init(&mut self) -> Result<(), io::Error> {
+    pub fn init(&mut self, platform: &PlatformSpecific) -> Result<(), io::Error> {
         self.map_manager.read_maps(DefaultMapContentProvider {})?;
+        platform.renderer.setup();
         Ok(())
     }
 
@@ -93,9 +93,8 @@ impl Game {
         return false;
     }
 
-    pub fn tear_down(&self) {
-        //disable raw mode
-        stdout().into_raw_mode().unwrap().suspend_raw_mode().unwrap_or(());
+    pub fn tear_down(&self, platform: &PlatformSpecific) {
+        platform.renderer.teardown();
     }
 }
 

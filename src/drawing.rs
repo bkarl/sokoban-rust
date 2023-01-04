@@ -1,33 +1,42 @@
 use crate::map::{Map, MapTile};
-use std::io::Write;
+use std::io::{Stdout, stdout, Write};
+
+use crossterm::{
+     queue, style::Print, terminal, cursor
+};
 
 pub trait Draw {
+    fn setup(&self);
     fn draw(&mut self, map : &Map);
+    fn teardown(&self);
 }
 
 pub struct TerminalDrawer {
-	stdout : termion::raw::RawTerminal<std::io::Stdout>
+    stdout: Stdout,
 }
 
+
 impl TerminalDrawer {
-    pub fn new(stdout: termion::raw::RawTerminal<std::io::Stdout>) -> TerminalDrawer {
-        TerminalDrawer { stdout: stdout}
+    pub fn new() -> TerminalDrawer {
+        TerminalDrawer { stdout: stdout() }
     }
 
     fn draw_help_text(&mut self, map : &Map) {
-       
-       write!(
-            self.stdout,
+       let string_to_print = format!(
             "Map {}\r\nq - quit, r - reset, n - next map, p - previous map\r\n",
-            map.id)
-        .unwrap();
+            map.id);
+       queue!(self.stdout, Print(string_to_print)).unwrap();
     }
 }
 
 impl Draw for TerminalDrawer {
+    fn setup(&self) {
+        terminal::enable_raw_mode().unwrap();        
+    }
+    
 	fn draw(&mut self, map : &Map) {
 		
-        write!(self.stdout, "{}", termion::clear::All).unwrap();
+       queue!(self.stdout, terminal::Clear(terminal::ClearType::All)).unwrap();
         let mut map_dim = 0;
         for y in 0..map.map.len() {
             let mut current_line = String::new();
@@ -38,11 +47,10 @@ impl Draw for TerminalDrawer {
                     _ => current_line += " ",
                 }
             }
-            write!(
+            queue!(
                 self.stdout,
-                "{}{}\n",
-                termion::cursor::Goto(1, (y + 1) as u16),
-                current_line
+                cursor::MoveTo(1,(y+1) as u16),
+                Print(&current_line)
             )
             .unwrap();
             if current_line.trim().is_empty() {
@@ -50,45 +58,43 @@ impl Draw for TerminalDrawer {
                 break;
             }
         }
-        write!(
+        queue!(
             self.stdout,
-            "{}{}\n",
-            termion::cursor::Goto(
+            cursor::MoveTo(
                 (map.player_position.x + 1) as u16,
                 (map.player_position.y + 1) as u16
             ),
-            "@"
+            Print("@".to_string())
         )
         .unwrap();
         for block in map.movable_blocks.iter() {
-            write!(
+            queue!(
                 self.stdout,
-                "{}{}\n",
-                termion::cursor::Goto((block.position.x + 1) as u16, (block.position.y + 1) as u16),
-                "*"
+                cursor::MoveTo((block.position.x + 1) as u16, (block.position.y + 1) as u16),
+                Print("*".to_string())
             )
             .unwrap();
         }
-       write!(
+       queue!(
             self.stdout,
-            "{}",
-            termion::cursor::Goto(0, (map_dim + 2) as u16))
+            cursor::MoveTo(0, (map_dim + 2) as u16))
         .unwrap();
 
         self.draw_help_text(map);
+        self.stdout.flush().unwrap();
 	}
+
+    fn teardown(&self) {
+        terminal::disable_raw_mode().unwrap();        
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::stdout;
-    use termion::raw::IntoRawMode;
 
     #[test]
     fn test_drawing_can_be_instatiated() {
-        let stdout_for_drawing = stdout().into_raw_mode().unwrap();
-        let _drawing_module = TerminalDrawer{ stdout: stdout_for_drawing};
-        stdout().into_raw_mode().unwrap().suspend_raw_mode().unwrap_or(()); 
+        let _drawing_module = TerminalDrawer::new();
     }
 }

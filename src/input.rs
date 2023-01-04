@@ -1,7 +1,8 @@
-use std::io::{self, Result};
-use termion::event::*;
-use termion::input::TermRead;
-
+use crossterm::{
+    event::{
+        read, Event, KeyCode, KeyEvent},
+    Result,
+};
 use crate::MoveDirection;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -29,35 +30,48 @@ impl<S: UserInputProvider + ?Sized> UserInputProvider for Box<S> {
     }
 }
 
-pub struct TerminalInputProvider {
-    stdin: Box<(dyn Iterator<Item = Result<Key>>)>,
+pub trait TerminalInputProvider {
+    fn read_key_input(&self) -> Result<Event>;
 }
 
-impl UserInputProvider for TerminalInputProvider {
+pub struct CrosstermInput {
+}
+
+impl TerminalInputProvider for CrosstermInput {
+    fn read_key_input(&self) -> Result<Event> {
+        read()
+    }
+}
+
+pub struct TerminalInput {
+    input_provider : Box<dyn TerminalInputProvider>,
+}
+
+impl UserInputProvider for TerminalInput {
     fn get_user_input(&mut self) -> InputAction {
-        let c = self.stdin.next().unwrap();
-        let movedir : Option<MoveDirection> = match c.as_ref().unwrap() {
-            Key::Left => Some(MoveDirection::Left),
-            Key::Right => Some(MoveDirection::Right),
-            Key::Up => Some(MoveDirection::Up),
-            Key::Down => Some(MoveDirection::Down),
+        let event = self.input_provider.read_key_input();
+        let movedir : Option<MoveDirection> = match event.as_ref().unwrap() {
+            Event::Key(KeyEvent{code: KeyCode::Left, ..}) => Some(MoveDirection::Left),
+            Event::Key(KeyEvent{code: KeyCode::Right, ..}) => Some(MoveDirection::Right),
+            Event::Key(KeyEvent{code: KeyCode::Up, ..}) => Some(MoveDirection::Up),
+            Event::Key(KeyEvent{code: KeyCode::Down, ..}) => Some(MoveDirection::Down),
             _ => None
         };
 
-        let cmd = match c.unwrap() {
-            Key::Char('q') | Key::Esc => Some(GameCommand::Quit),
-            Key::Char('n') => Some(GameCommand::NextMap),
-            Key::Char('p') => Some(GameCommand::PreviousMap),
-            Key::Char('r') => Some(GameCommand::Reset),
+        let cmd = match event.unwrap() {
+            Event::Key(KeyEvent{code: KeyCode::Char('q') | KeyCode::Esc, ..}) => Some(GameCommand::Quit),
+            Event::Key(KeyEvent{code: KeyCode::Char('n'), ..}) => Some(GameCommand::NextMap),
+            Event::Key(KeyEvent{code: KeyCode::Char('p'), ..}) => Some(GameCommand::PreviousMap),
+            Event::Key(KeyEvent{code: KeyCode::Char('r'), ..}) => Some(GameCommand::Reset),
             _ => None
         };
         InputAction { movement_command: movedir, game_command: cmd}
     }
 }
 
-impl TerminalInputProvider {
-    pub fn new() -> TerminalInputProvider {
-        TerminalInputProvider { stdin: Box::new(io::stdin().keys())}
+impl TerminalInput {
+    pub fn new() -> TerminalInput {
+        TerminalInput { input_provider: Box::new(CrosstermInput {})}
     }
 }
 
@@ -65,23 +79,23 @@ impl TerminalInputProvider {
 mod tests {
     use super::*;
 
-    pub struct FakeUserInputProvider {
-        pub key: Key,
+    pub struct FakeInput {
+        pub key: crossterm::event::Event,
     }
 
-    impl Iterator for FakeUserInputProvider {
-        type Item = Result<Key>;
-        fn next(&mut self) -> Option<Self::Item> {
-            Some(Ok(self.key))
+    impl TerminalInputProvider for FakeInput{
+        fn read_key_input(&self) -> Result<Event> {
+            Ok(self.key)
         }
     }
+   
 
     #[test]
     fn test_input() {
-        let fake_input_provider = FakeUserInputProvider {
-            key: Key::Char('q'),
+        let fake_input_provider = FakeInput{
+            key: Event::Key(KeyCode::Char('q').into()),
         };
-        let mut input_provider = TerminalInputProvider{stdin: Box::new(fake_input_provider)};
+        let mut input_provider = TerminalInput{input_provider: Box::new(fake_input_provider)};
         assert!(input_provider.get_user_input().movement_command.is_none());
     }
 
@@ -91,10 +105,10 @@ mod tests {
             #[test]
             fn $name() {
                 let (action, key) = $value;
-                let fake_input_provider = FakeUserInputProvider {
+                let fake_input_provider = FakeInput{
                     key: key
                 };
-                let mut input_provider = TerminalInputProvider{stdin: Box::new(fake_input_provider)};
+                let mut input_provider = TerminalInput{input_provider: Box::new(fake_input_provider)};
                 assert_eq!(
                     action,
                     input_provider.get_user_input()
@@ -105,13 +119,13 @@ mod tests {
     }
 
     movement_input_tests! {
-        test_up: (InputAction { movement_command: Some(MoveDirection::Up), game_command: None}, Key::Up),
-        test_down: (InputAction { movement_command: Some(MoveDirection::Down), game_command: None}, Key::Down),
-        test_left: (InputAction { movement_command: Some(MoveDirection::Left), game_command: None}, Key::Left),
-        test_right: (InputAction { movement_command: Some(MoveDirection::Right), game_command: None}, Key::Right),
-        test_q: (InputAction { movement_command: None, game_command: Some(GameCommand::Quit)}, Key::Char('q')),
-        test_p: (InputAction { movement_command: None, game_command: Some(GameCommand::PreviousMap)}, Key::Char('p')),
-        test_n: (InputAction { movement_command: None, game_command: Some(GameCommand::NextMap)}, Key::Char('n')),
-        test_r: (InputAction { movement_command: None, game_command: Some(GameCommand::Reset)}, Key::Char('r')),
+        test_up: (InputAction { movement_command: Some(MoveDirection::Up), game_command: None}, Event::Key(KeyCode::Up.into())),
+        test_down: (InputAction { movement_command: Some(MoveDirection::Down), game_command: None}, Event::Key(KeyCode::Down.into())),
+        test_left: (InputAction { movement_command: Some(MoveDirection::Left), game_command: None}, Event::Key(KeyCode::Left.into())),
+        test_right: (InputAction { movement_command: Some(MoveDirection::Right), game_command: None}, Event::Key(KeyCode::Right.into())),
+        test_q: (InputAction { movement_command: None, game_command: Some(GameCommand::Quit)}, Event::Key(KeyCode::Char('q').into())),
+        test_p: (InputAction { movement_command: None, game_command: Some(GameCommand::PreviousMap)}, Event::Key(KeyCode::Char('p').into())),
+        test_n: (InputAction { movement_command: None, game_command: Some(GameCommand::NextMap)}, Event::Key(KeyCode::Char('n').into())),
+        test_r: (InputAction { movement_command: None, game_command: Some(GameCommand::Reset)}, Event::Key(KeyCode::Char('r').into())),
     }
 }
